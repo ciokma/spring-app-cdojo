@@ -1,0 +1,58 @@
+pipeline {
+  agent any
+  
+  stages {
+    stage('Clonar repositorio') {
+      steps {
+        git 'https://ruta-al-repositorio.git'
+      }
+    }
+    
+    stage('Construir aplicación') {
+      steps {
+        // Puedes elegir Maven o Gradle según tu proyecto
+        sh 'mvn clean package'
+      }
+    }
+    
+    stage('Crear imagen Docker') {
+      steps {
+        sh 'docker build -t nombre-imagen .'
+      }
+    }
+    
+    stage('Subir imagen a Docker registry') {
+      steps {
+        withCredentials([
+          usernamePassword(
+            credentialsId: 'ID-credenciales-docker',
+            usernameVariable: 'DOCKER_USERNAME',
+            passwordVariable: 'DOCKER_PASSWORD'
+          )
+        ]) {
+          sh 'docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD'
+        }
+        
+        sh 'docker push nombre-imagen'
+      }
+    }
+    
+    stage('Desplegar en OpenShift') {
+      steps {
+        withCredentials([
+          usernamePassword(
+            credentialsId: 'ID-credenciales-openshift',
+            usernameVariable: 'OPENSHIFT_USERNAME',
+            passwordVariable: 'OPENSHIFT_PASSWORD'
+          )
+        ]) {
+          sh '''
+            oc login --username=$OPENSHIFT_USERNAME --password=$OPENSHIFT_PASSWORD --server=https://ruta-al-cluster-openshift
+            oc project nombre-proyecto
+            oc new-app nombre-imagen
+          '''
+        }
+      }
+    }
+  }
+}
