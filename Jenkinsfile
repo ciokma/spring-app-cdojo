@@ -1,13 +1,3 @@
-// Based on:
-// https://raw.githubusercontent.com/redhat-cop/container-pipelines/master/basic-spring-boot/Jenkinsfile
-
-library identifier: "pipeline-library@v1.5",
-retriever: modernSCM(
-  [
-    $class: "GitSCMSource",
-    remote: "https://github.com/redhat-cop/pipeline-library.git"
-  ]
-)
 
 // The name you want to give your Spring Boot application
 // Each resource related to your app will be given this name
@@ -15,23 +5,47 @@ appName = "hello-java-spring-boot"
 
 pipeline {
     // Use the 'maven' Jenkins agent image which is provided with OpenShift 
-    agent { label "maven" }
+    agent any
+    environment {
+		DOCKERHUB_CREDENTIALS=credentials('dockerhub-cred')
+	}
     stages {
-        stage("Checkout") {
+    
+        stage('Construir aplicación') {
+          steps {
+            // Puedes elegir Maven o Gradle según tu proyecto
+            sh 'mvn clean package'
+          }
+        }
+        stage('Crear imagen Docker') {
             steps {
-                checkout scm
+              sh 'docker build -t ciokma/springboot-cdojo:latest .'
+              sh 'docker image save -o ciokma-springboot-latest.tar ciokma/springboot-cdojo:latest'
+              
             }
         }
-        stage("Docker Build") {
-            steps {
-                // This uploads your application's source code and performs a binary build in OpenShift
-                // This is a step defined in the shared library (see the top for the URL)
-                // (Or you could invoke this step using 'oc' commands!)
-                binaryBuild(buildConfigName: appName, buildFromPath: ".")
-            }
-        }
+       stage('Login dockerhub') {
 
-        // You could extend the pipeline by tagging the image,
-        // or deploying it to a production environment, etc......
+			steps {
+				sh 'echo $DOCKERHUB_CREDENTIALS_PSW | docker login -u $DOCKERHUB_CREDENTIALS_USR --password-stdin'
+			}
+		}
+
+		stage('Push to dockerhub') {
+
+			steps {
+				sh 'docker push ciokma/springboot-cdojo:latest'
+			}
+		}
+        
+        stage('Desplegar en OpenShift') {
+            steps {
+              sh '''
+		    oc login --token=Y1KUsDAJgnc_OmVsyMuS4W3PehLZOgtN51uJgElWPSU --server=https://ec2-100-26-153-236.compute-1.amazonaws.com:8443 --insecure-skip-tls-verify
+		    oc new-app ciokma/springboot-cdojo:latest --name springboot-cdojo
+		    oc expose svc springboot-cdojo --name=springboot-cdojo
+                  '''
+             }
+        }
     }
 }
